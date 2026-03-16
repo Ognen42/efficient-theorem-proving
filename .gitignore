@@ -1,0 +1,20 @@
+# Python
+*.pyc
+__pycache__/
+*.lock
+
+# Generated data and results
+*.json
+*.csv
+*.pkl
+*.npy
+*.png
+*.zip
+
+# Pipeline output directories
+outputs/
+pruned_data/
+threshold_analysis/
+
+# Windows/WSL metadata
+*:Zone.Identifier
