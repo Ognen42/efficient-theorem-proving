@@ -42,6 +42,8 @@ from protocol_config import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_P,
     KIMINA_TIMEOUT_SEC,
+    NO_REASONING_PROTOCOL_NAME,
+    NO_REASONING_PROTOCOL_VERSION,
     PROTOCOL_NAME,
     PROTOCOL_VERSION,
     protocol_metadata,
@@ -144,12 +146,15 @@ def evaluate_with_output_saving(
     # Setup
     outputs_dir = Path(outputs_dir)
     outputs_dir.mkdir(parents=True, exist_ok=True)
-    if protocol not in {"v2", "baseline_compat"}:
-        raise ValueError("protocol must be one of: v2, baseline_compat")
+    if protocol not in {"v2", "baseline_compat", "no_reasoning"}:
+        raise ValueError("protocol must be one of: v2, baseline_compat, no_reasoning")
 
     if protocol == "baseline_compat":
         active_protocol_name = BASELINE_COMPAT_PROTOCOL_NAME
         active_protocol_version = BASELINE_COMPAT_PROTOCOL_VERSION
+    elif protocol == "no_reasoning":
+        active_protocol_name = NO_REASONING_PROTOCOL_NAME
+        active_protocol_version = NO_REASONING_PROTOCOL_VERSION
     else:
         active_protocol_name = PROTOCOL_NAME
         active_protocol_version = PROTOCOL_VERSION
@@ -377,6 +382,7 @@ def evaluate_with_output_saving(
 
         # Record results
         results[f"seed_{seed}"][f"correct_{problem_idx}"] = valid_count
+        results[f"seed_{seed}"][f"name_{problem_idx}"] = problem_name
         print(f"  Total verified: {valid_count}/{attempts}")
 
         # Save incremental results
@@ -430,8 +436,8 @@ def main():
     parser.add_argument(
         "--protocol",
         default="v2",
-        choices=["v2", "baseline_compat"],
-        help="Evaluation protocol. v2 is current default; baseline_compat mirrors old baseline prompt/model init.",
+        choices=["v2", "baseline_compat", "no_reasoning"],
+        help="Evaluation protocol. v2 is current default; baseline_compat mirrors old baseline prompt/model init; no_reasoning skips CoT and directly outputs the proof.",
     )
     parser.add_argument("--save_all", action="store_true", help="Save unverified samples too")
     parser.add_argument("--max_problems", type=int, default=None, help="Limit number of problems to process")

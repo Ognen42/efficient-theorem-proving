@@ -9,6 +9,8 @@ PROTOCOL_NAME = "kimina_eval_v2"
 PROTOCOL_VERSION = "2.0.0"
 BASELINE_COMPAT_PROTOCOL_NAME = "kimina_eval_baseline_compat"
 BASELINE_COMPAT_PROTOCOL_VERSION = "1.0.0"
+NO_REASONING_PROTOCOL_NAME = "kimina_eval_no_reasoning"
+NO_REASONING_PROTOCOL_VERSION = "1.0.0"
 
 # Canonical defaults
 DEFAULT_PASS_K = 4

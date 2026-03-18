@@ -21,6 +21,56 @@ def build_chat_prompt(
     When assistant_prefill is provided, it is appended after the generated assistant
     prompt prefix so the model can continue generation from that exact prefix.
     """
+    if protocol_name == "kimina_eval_no_reasoning":
+        # The assistant cue opens the final proof block directly, with no reasoning prefix.
+        no_reasoning_cue = assistant_prefill or "Here is the final proof:\n```lean4\n"
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert in mathematics and Lean 4. "
+                    "Do not reason or explain. Immediately output the final Lean 4 proof."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Provide the Lean 4 proof for the following formal statement.\n"
+                    f"# Formal statement:\n```lean4\n{formal_statement}\n```"
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": no_reasoning_cue,
+            },
+        ]
+        if hasattr(tokenizer, "apply_chat_template"):
+            try:
+                # continue_final_message keeps the assistant turn open (transformers >= 4.44).
+                prompt = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                    continue_final_message=True,
+                )
+            except TypeError:
+                # Fallback: open the assistant turn via add_generation_prompt, then append cue.
+                prompt = tokenizer.apply_chat_template(
+                    messages[:-1],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                prompt += no_reasoning_cue
+        else:
+            prompt = (
+                "You are an expert in mathematics and Lean 4. "
+                "Do not reason or explain. Immediately output the final Lean 4 proof.\n\n"
+                "Provide the Lean 4 proof for the following formal statement.\n"
+                f"# Formal statement:\n```lean4\n{formal_statement}\n```\n"
+                f"{no_reasoning_cue}"
+            )
+        return prompt
+
     base_user_content = "Think about and solve the following problem step by step in Lean 4.\n"
     if protocol_name == "kimina_eval_v2":
         base_user_content += (
