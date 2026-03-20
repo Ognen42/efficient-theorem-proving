@@ -61,6 +61,12 @@ def _names_from_results(results: dict, seed_key: str, indices: set) -> dict:
     return names
 
 
+def _has_name_keys(results: dict, seed_key: str) -> bool:
+    """Return True if results include any name_N keys."""
+    seed_data = results[seed_key]
+    return any(key.startswith("name_") for key in seed_data)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Filter problems to intermediate difficulty (CoT-solved minus no-reasoning-solved)."
@@ -115,7 +121,7 @@ def main():
 
     # Resolve names
     names_by_idx = _names_from_results(cot_results, cot_seed_key, set(kept_indices))
-    if not names_by_idx:
+    if not names_by_idx and kept_indices and not _has_name_keys(cot_results, cot_seed_key):
         if args.dataset is None:
             print(
                 "ERROR: CoT results have no name_N keys and --dataset was not provided. "

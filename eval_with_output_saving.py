@@ -391,7 +391,12 @@ def evaluate_with_output_saving(
             json.dump(results, f, indent=2)
 
     # Final statistics
-    problems_solved = sum(1 for v in results[f"seed_{seed}"].values() if v > 0)
+    seed_results = results[f"seed_{seed}"]
+    problems_solved = sum(
+        1
+        for key, value in seed_results.items()
+        if key.startswith("correct_") and value > 0
+    )
     pass_at_k = problems_solved / len(dataset)
 
     results[f"seed_{seed}_metadata"]["problems_solved"] = problems_solved
