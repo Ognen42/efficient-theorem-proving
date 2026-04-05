@@ -235,8 +235,8 @@ def extract_lean_code(text: str) -> Optional[str]:
 
 
 def extract_proof(code: str) -> str:
-    """Extract proof part (after :=) from Lean code."""
-    i = code.find(":=")
+    """Extract proof part (after the last :=) from Lean code."""
+    i = code.rfind(":=")
     proof = code[i+2:].lstrip() if i != -1 else code
     return proof
 
