@@ -65,13 +65,19 @@ pip install -r requirements.txt
 
 ```bash
 python eval_with_output_saving.py \
-  --test ~/dataset/minif2f/test \
+  --hf_dataset AI-MO/NuminaMath-LEAN \
+  --hf_split train \
+  --name_field name \
+  --statement_field statement \
   --model AI-MO/Kimina-Prover-Distill-1.7B \
+  --subset_size 256 \
+  --subset_seed 1 \
   --k 4 \
   --outputs_dir outputs/seed_1
 ```
 
 Generates `k=4` proof candidates per problem, verifies each with Kimina, and saves full outputs with metadata.
+For local on-disk datasets, use `--test /path/to/dataset_dir` instead of `--hf_dataset`.
 
 ### 2. Compute Importance Scores
 
@@ -109,6 +115,18 @@ python compute_token_metrics.py \
 
 Post-processes results (CPU-only) to compute token counts, reduction percentages, and generate Pareto frontier plots.
 
+### 5. Export Self-Contained Percentile Datasets
+
+```bash
+python export_pruned_percentile_datasets.py \
+  --pruned_dir pruned_data/seed_1_nll \
+  --output_dir exported_percentiles/seed_1_nll \
+  --percentiles 90 75 50 25 \
+  --formats jsonl hf
+```
+
+Creates one dataset per percentile (`p90/`, `p75/`, etc.), each containing fully self-contained records with formal statement, original/pruned informal reasoning, Lean code, chunk scores, and pruning metadata.
+
 ## Evaluation Protocol
 
 The pipeline follows the **kimina_eval_v2** protocol (documented in `PROTOCOL_V2.md`):
@@ -130,6 +148,7 @@ The pipeline follows the **kimina_eval_v2** protocol (documented in `PROTOCOL_V2
 | `run_lean_pruning.py` | Pruning workflow orchestration and training data export |
 | `evaluate_pruning_thresholds.py` | Threshold sweep with regeneration and verification |
 | `compute_token_metrics.py` | Token-level analysis and visualization |
+| `export_pruned_percentile_datasets.py` | Export one self-contained training dataset per percentile |
 | `compare_importance_methods.py` | NLL vs KL method comparison |
 | `PROTOCOL_V2.md` | Canonical evaluation protocol specification |
 
