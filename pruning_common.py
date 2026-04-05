@@ -178,6 +178,52 @@ def sanitize_proof_imports(proof: str) -> str:
     return "\n".join(kept).strip()
 
 
+def _extract_named_decl_proof(lean_code: str, theorem_name: str) -> Optional[str]:
+    """Extract proof body for a named theorem/lemma/example declaration."""
+    decl_pat = re.compile(
+        rf"\b(?:theorem|lemma|example)\s+{re.escape(theorem_name)}\b"
+    )
+    decl_match = decl_pat.search(lean_code)
+    if decl_match is None:
+        return None
+
+    tail = lean_code[decl_match.end() :]
+    assign_match = re.search(r":=", tail)
+    if assign_match is None:
+        return None
+
+    proof_start = decl_match.end() + assign_match.end()
+    return lean_code[proof_start:].lstrip()
+
+
+def extract_proof_for_statement(lean_code: str, formal_statement: str) -> str:
+    """
+    Extract a proof body from generated Lean code with theorem-aware matching.
+
+    Priority:
+    1. Use theorem/lemma/example name parsed from formal_statement.
+    2. Fallback to first ':=' for single-declaration snippets.
+    3. Fallback to last ':=' for noisy multi-declaration snippets.
+    """
+    code = lean_code.strip()
+    if not code:
+        return ""
+
+    name_match = re.search(r"\b(?:theorem|lemma|example)\s+([A-Za-z0-9_'.]+)\b", formal_statement)
+    if name_match:
+        named = _extract_named_decl_proof(code, name_match.group(1))
+        if named is not None:
+            return named
+
+    first_i = code.find(":=")
+    last_i = code.rfind(":=")
+    if first_i == -1:
+        return code
+    if first_i == last_i:
+        return code[first_i + 2 :].lstrip()
+    return code[last_i + 2 :].lstrip()
+
+
 def stable_seed(problem_name: str, threshold: float) -> int:
     """Deterministic seed stable across runs/machines."""
     key = f"{problem_name}|{threshold:.8f}".encode("utf-8")

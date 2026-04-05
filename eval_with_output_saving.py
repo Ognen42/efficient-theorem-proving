@@ -35,6 +35,7 @@ from kimina_client.models import Snippet
 from pruning_common import (
     attach_proof_to_statement,
     build_chat_prompt,
+    extract_proof_for_statement,
     sanitize_proof_imports,
 )
 from protocol_config import (
@@ -258,13 +259,6 @@ def _extract_last_lean_block(text: str) -> Optional[str]:
     """Extract the last Lean code block from text (```lean4``` or ```lean```)."""
     blocks = re.findall(r"```(?:lean4|lean)\n([\s\S]*?)\n```", text)
     return blocks[-1] if blocks else None
-
-
-def _extract_proof(code: str) -> str:
-    """Extract proof part (after the last :=) from Lean code."""
-    i = code.rfind(":=")
-    proof = code[i+2:].lstrip() if i != -1 else code
-    return proof
 
 
 def _split_informal_formal(full_output: str) -> tuple[str, str]:
@@ -583,7 +577,7 @@ def evaluate_with_output_saving(
                     sample_idx += 1
                     continue
 
-                proof = _extract_proof(lean_code)
+                proof = extract_proof_for_statement(lean_code, formal_statement)
                 if sanitize_proof_imports_flag:
                     proof = sanitize_proof_imports(proof)
 

@@ -72,6 +72,7 @@ from pruning_common import (
     attach_proof_to_statement,
     build_chat_prompt,
     build_pruned_text,
+    extract_proof_for_statement,
     normalize_think_prefill,
     sanitize_proof_imports,
     select_kept_chunks,
@@ -234,13 +235,6 @@ def extract_lean_code(text: str) -> Optional[str]:
     return blocks[-1] if blocks else None
 
 
-def extract_proof(code: str) -> str:
-    """Extract proof part (after the last :=) from Lean code."""
-    i = code.rfind(":=")
-    proof = code[i+2:].lstrip() if i != -1 else code
-    return proof
-
-
 def regenerate_and_verify(
     sample: Dict,
     pruned_informal: str,
@@ -296,7 +290,7 @@ def regenerate_and_verify(
 
         lean_token_counts.append(len(tokenizer.encode(lean_code)))
 
-        proof = extract_proof(lean_code)
+        proof = extract_proof_for_statement(lean_code, formal_statement)
         if sanitize_proof_imports_flag:
             proof = sanitize_proof_imports(proof)
 
