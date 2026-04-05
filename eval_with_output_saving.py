@@ -32,7 +32,11 @@ from datasets import load_dataset, load_from_disk
 from transformers import AutoTokenizer
 from kimina_client.sync_client import KiminaClient
 from kimina_client.models import Snippet
-from pruning_common import build_chat_prompt, attach_proof_to_statement
+from pruning_common import (
+    attach_proof_to_statement,
+    build_chat_prompt,
+    sanitize_proof_imports,
+)
 from protocol_config import (
     BASELINE_COMPAT_PROTOCOL_NAME,
     BASELINE_COMPAT_PROTOCOL_VERSION,
@@ -318,6 +322,7 @@ def evaluate_with_output_saving(
     vllm_max_num_seqs: Optional[int] = None,
     vllm_enforce_eager: bool = False,
     vllm_max_model_len: Optional[int] = None,
+    sanitize_proof_imports_flag: bool = False,
 ):
     """
     Run evaluation and save full outputs for pruning pipeline.
@@ -445,6 +450,7 @@ def evaluate_with_output_saving(
             "vllm_max_num_seqs": vllm_max_num_seqs,
             "vllm_enforce_eager": vllm_enforce_eager,
             "vllm_max_model_len": vllm_max_model_len,
+            "sanitize_proof_imports": sanitize_proof_imports_flag,
             "model_path": model_path,
             "k": k,
             "temperature": temperature,
@@ -475,6 +481,7 @@ def evaluate_with_output_saving(
                     "vllm_max_num_seqs": vllm_max_num_seqs,
                     "vllm_enforce_eager": vllm_enforce_eager,
                     "vllm_max_model_len": vllm_max_model_len,
+                    "sanitize_proof_imports": sanitize_proof_imports_flag,
                     "model_path": model_path,
                     "requested_protocol": protocol,
                     "active_protocol_name": active_protocol_name,
@@ -562,6 +569,7 @@ def evaluate_with_output_saving(
                                 'vllm_max_num_seqs': vllm_max_num_seqs,
                                 'vllm_enforce_eager': vllm_enforce_eager,
                                 'vllm_max_model_len': vllm_max_model_len,
+                                'sanitize_proof_imports': sanitize_proof_imports_flag,
                                 'requested_protocol': protocol,
                                 'protocol_name': active_protocol_name,
                                 'protocol_version': active_protocol_version,
@@ -576,6 +584,8 @@ def evaluate_with_output_saving(
                     continue
 
                 proof = _extract_proof(lean_code)
+                if sanitize_proof_imports_flag:
+                    proof = sanitize_proof_imports(proof)
 
                 # Create snippet for verification
                 snippet_code = (
@@ -652,6 +662,7 @@ def evaluate_with_output_saving(
                         'vllm_max_num_seqs': vllm_max_num_seqs,
                         'vllm_enforce_eager': vllm_enforce_eager,
                         'vllm_max_model_len': vllm_max_model_len,
+                        'sanitize_proof_imports': sanitize_proof_imports_flag,
                         'requested_protocol': protocol,
                         'protocol_name': active_protocol_name,
                         'protocol_version': active_protocol_version,
@@ -788,6 +799,11 @@ def main():
         default=None,
         help="Override vLLM max_model_len (defaults to max_tokens + 2048)",
     )
+    parser.add_argument(
+        "--sanitize_proof_imports",
+        action="store_true",
+        help="Strip `import ...` lines from generated proof text before verification (opt-in)",
+    )
 
     args = parser.parse_args()
 
@@ -821,6 +837,7 @@ def main():
         vllm_max_num_seqs=args.vllm_max_num_seqs,
         vllm_enforce_eager=args.vllm_enforce_eager,
         vllm_max_model_len=args.vllm_max_model_len,
+        sanitize_proof_imports_flag=args.sanitize_proof_imports,
     )
 
 

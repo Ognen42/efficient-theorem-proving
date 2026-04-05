@@ -73,6 +73,7 @@ from pruning_common import (
     build_chat_prompt,
     build_pruned_text,
     normalize_think_prefill,
+    sanitize_proof_imports,
     select_kept_chunks,
 )
 from protocol_config import (
@@ -247,7 +248,8 @@ def regenerate_and_verify(
     tokenizer,
     client: KiminaClient,
     sampling_params: SamplingParams,
-    k: int = DEFAULT_PASS_K
+    k: int = DEFAULT_PASS_K,
+    sanitize_proof_imports_flag: bool = False,
 ) -> Tuple[bool, float, int, Optional[float]]:
     """
     Regenerate Lean proof from pruned reasoning and verify (with Pass@k support).
@@ -295,6 +297,8 @@ def regenerate_and_verify(
         lean_token_counts.append(len(tokenizer.encode(lean_code)))
 
         proof = extract_proof(lean_code)
+        if sanitize_proof_imports_flag:
+            proof = sanitize_proof_imports(proof)
 
         snippet_code = (
             "import Mathlib\n"
@@ -330,6 +334,7 @@ def evaluate_threshold(
     use_all_samples: bool = False,
     eval_pass_k: int = DEFAULT_PASS_K,
     selection_mode: str = "nll",
+    sanitize_proof_imports_flag: bool = False,
 ) -> ThresholdResult:
     """
     Evaluate a single threshold across all samples.
@@ -408,7 +413,8 @@ def evaluate_threshold(
             tokenizer,
             client,
             sampling_params,
-            k=eval_pass_k
+            k=eval_pass_k,
+            sanitize_proof_imports_flag=sanitize_proof_imports_flag,
         )
 
         generation_times.append(gen_time)
@@ -760,6 +766,11 @@ def main():
     # Testing
     parser.add_argument("--max_samples", type=int, default=None,
                        help="Limit samples for testing")
+    parser.add_argument(
+        "--sanitize_proof_imports",
+        action="store_true",
+        help="Strip `import ...` lines from regenerated proof text before verification (opt-in)",
+    )
 
     args = parser.parse_args()
 
@@ -840,6 +851,7 @@ def main():
         sampling_params=sampling_params,
         use_all_samples=args.use_all_samples,
         eval_pass_k=args.eval_pass_k,
+        sanitize_proof_imports_flag=args.sanitize_proof_imports,
     )
 
     total_runs = 3 if args.random_baseline else 1
@@ -879,6 +891,7 @@ def main():
                     "per_problem_percentiles": args.per_problem_percentiles,
                     "thresholds": args.thresholds,
                     "percentiles": args.percentiles,
+                    "sanitize_proof_imports": args.sanitize_proof_imports,
                 }
             ),
             f,

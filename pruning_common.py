@@ -165,6 +165,19 @@ def attach_proof_to_statement(formal_statement: str, proof: str) -> str:
     return f"{statement} := by\n{proof_body}"
 
 
+def sanitize_proof_imports(proof: str) -> str:
+    """
+    Remove import lines from generated proof text.
+
+    Some model outputs contain full-file snippets with `import ...` lines. Our
+    verifier already prepends imports in the snippet header, so mid-file imports
+    cause Lean errors ("invalid 'import' command ... beginning of file").
+    """
+    lines = proof.splitlines()
+    kept = [line for line in lines if not re.match(r"^\s*import\s+\S+", line)]
+    return "\n".join(kept).strip()
+
+
 def stable_seed(problem_name: str, threshold: float) -> int:
     """Deterministic seed stable across runs/machines."""
     key = f"{problem_name}|{threshold:.8f}".encode("utf-8")
