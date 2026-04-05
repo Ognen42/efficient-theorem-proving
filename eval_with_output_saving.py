@@ -36,6 +36,7 @@ from pruning_common import (
     attach_proof_to_statement,
     build_chat_prompt,
     extract_proof_for_statement,
+    sanitize_formal_statement,
     sanitize_proof_imports,
 )
 from protocol_config import (
@@ -581,13 +582,15 @@ def evaluate_with_output_saving(
                 if sanitize_proof_imports_flag:
                     proof = sanitize_proof_imports(proof)
 
+                statement_for_verification = sanitize_formal_statement(formal_statement)
+
                 # Create snippet for verification
                 snippet_code = (
                     "import Mathlib\n"
                     "import Aesop\n\n"
                     "set_option maxHeartbeats 0\n\n"
                     "open BigOperators Real Nat Topology Rat\n\n"
-                    f"{attach_proof_to_statement(formal_statement, proof)}"
+                    f"{attach_proof_to_statement(statement_for_verification, proof)}"
                 )
 
                 snippet = Snippet(id=f"{problem_name}_{sample_idx}", code=snippet_code)

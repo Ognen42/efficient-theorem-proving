@@ -74,6 +74,7 @@ from pruning_common import (
     build_pruned_text,
     extract_proof_for_statement,
     normalize_think_prefill,
+    sanitize_formal_statement,
     sanitize_proof_imports,
     select_kept_chunks,
 )
@@ -294,12 +295,14 @@ def regenerate_and_verify(
         if sanitize_proof_imports_flag:
             proof = sanitize_proof_imports(proof)
 
+        statement_for_verification = sanitize_formal_statement(formal_statement)
+
         snippet_code = (
             "import Mathlib\n"
             "import Aesop\n\n"
             "set_option maxHeartbeats 0\n\n"
             "open BigOperators Real Nat Topology Rat\n\n"
-            f"{attach_proof_to_statement(formal_statement, proof)}"
+            f"{attach_proof_to_statement(statement_for_verification, proof)}"
         )
 
         snippet = Snippet(id=f"{sample['problem_name']}_threshold_eval_{i}", code=snippet_code)

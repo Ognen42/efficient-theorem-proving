@@ -178,6 +178,41 @@ def sanitize_proof_imports(proof: str) -> str:
     return "\n".join(kept).strip()
 
 
+def sanitize_formal_statement(formal_statement: str) -> str:
+    """
+    Normalize a formal statement for verifier snippet assembly.
+
+    Some datasets include full-file prefixes like `import Mathlib` before the theorem.
+    The verifier snippet already prepends imports in the header, so we strip those
+    and keep only the declaration portion (starting at theorem/lemma/example).
+    """
+    text = formal_statement.strip()
+    if not text:
+        return text
+
+    # Remove Markdown code-fence wrappers if present.
+    text = re.sub(r"^\s*```(?:lean4|lean)?\s*", "", text)
+    text = re.sub(r"\s*```\s*$", "", text)
+
+    lines = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        m = re.match(r"^\s*import\s+\S+\s*(.*)$", line)
+        if m:
+            rest = m.group(1).strip()
+            if rest:
+                lines.append(rest)
+            continue
+        lines.append(raw_line)
+    text = "\n".join(lines).strip()
+
+    decl_match = re.search(r"\b(?:theorem|lemma|example)\b", text)
+    if decl_match:
+        text = text[decl_match.start() :].lstrip()
+
+    return text
+
+
 def _extract_named_decl_proof(lean_code: str, theorem_name: str) -> Optional[str]:
     """Extract proof body for a named theorem/lemma/example declaration."""
     decl_pat = re.compile(
