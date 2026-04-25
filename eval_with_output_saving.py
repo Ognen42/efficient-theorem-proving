@@ -295,6 +295,7 @@ def evaluate_with_output_saving(
     outputs_dir: str = "outputs",
     temperature: float = DEFAULT_TEMPERATURE,
     top_p: float = DEFAULT_TOP_P,
+    presence_penalty: float = 0.0,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     n_samples: int = DEFAULT_N_SAMPLES,
     early_stop: bool = False,
@@ -330,6 +331,7 @@ def evaluate_with_output_saving(
         outputs_dir: Directory to save outputs
         temperature: Sampling temperature
         top_p: Nucleus sampling threshold
+        presence_penalty: Penalize presence of already generated tokens
         max_tokens: Max generation length
         n_samples: Batch size for generation
         early_stop: Stop on first verified proof
@@ -411,6 +413,7 @@ def evaluate_with_output_saving(
     sampling_params = SamplingParams(
         temperature=temperature,
         top_p=top_p,
+        presence_penalty=presence_penalty,
         max_tokens=max_tokens,
         n=n_samples,
         seed=seed
@@ -450,6 +453,7 @@ def evaluate_with_output_saving(
             "k": k,
             "temperature": temperature,
             "top_p": top_p,
+            "presence_penalty": presence_penalty,
             "max_tokens": max_tokens,
             "n_samples": n_samples,
             "kimina_url": kimina_url,
@@ -484,6 +488,7 @@ def evaluate_with_output_saving(
                     "k": k,
                     "temperature": temperature,
                     "top_p": top_p,
+                    "presence_penalty": presence_penalty,
                     "max_tokens": max_tokens,
                     "n_samples": n_samples,
                     "kimina_url": kimina_url,
@@ -551,6 +556,7 @@ def evaluate_with_output_saving(
                             generation_metadata={
                                 'temperature': temperature,
                                 'top_p': top_p,
+                                'presence_penalty': presence_penalty,
                                 'max_tokens': max_tokens,
                                 'seed': seed,
                                 'dataset_row_index': row_index,
@@ -646,6 +652,7 @@ def evaluate_with_output_saving(
                     generation_metadata={
                         'temperature': temperature,
                         'top_p': top_p,
+                        'presence_penalty': presence_penalty,
                         'max_tokens': max_tokens,
                         'seed': seed,
                         'dataset_row_index': row_index,
@@ -743,6 +750,7 @@ def main():
     parser.add_argument("--outputs_dir", default="outputs/seed_1", help="Output directory")
     parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE, help="Sampling temperature")
     parser.add_argument("--top_p", type=float, default=DEFAULT_TOP_P, help="Nucleus sampling")
+    parser.add_argument("--presence_penalty", type=float, default=0.0, help="Presence penalty for generation")
     parser.add_argument("--max_tokens", type=int, default=DEFAULT_MAX_TOKENS, help="Max generation length")
     parser.add_argument("--n_samples", type=int, default=DEFAULT_N_SAMPLES, help="Batch size")
     parser.add_argument("--early_stop", action="store_true", help="Stop on first valid proof")
@@ -818,6 +826,7 @@ def main():
         outputs_dir=args.outputs_dir,
         temperature=args.temperature,
         top_p=args.top_p,
+        presence_penalty=args.presence_penalty,
         max_tokens=args.max_tokens,
         n_samples=args.n_samples,
         early_stop=args.early_stop,
