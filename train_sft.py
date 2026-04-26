@@ -249,6 +249,8 @@ def make_training_arguments(kwargs: dict[str, Any]) -> TrainingArguments:
         kwargs["evaluation_strategy"] = kwargs.pop("eval_strategy")
     if "eval_strategy" in signature.parameters and "evaluation_strategy" in kwargs:
         kwargs["eval_strategy"] = kwargs.pop("evaluation_strategy")
+    if "save_safetensors" not in signature.parameters and "save_safetensors" in kwargs:
+        kwargs.pop("save_safetensors")
     return TrainingArguments(**kwargs)
 
 
