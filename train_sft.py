@@ -17,6 +17,7 @@ from datasets import Dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    BitsAndBytesConfig,
     Trainer,
     TrainingArguments,
     set_seed,
@@ -24,6 +25,7 @@ from transformers import (
 
 
 SYSTEM_PROMPT = "You are an expert in mathematics and Lean 4."
+DEFAULT_LORA_TARGET_MODULES = "q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj"
 
 
 @dataclass
@@ -221,10 +223,46 @@ def resolve_precision(args: argparse.Namespace) -> tuple[bool, bool]:
 def configure_training_method(args: argparse.Namespace) -> None:
     if args.training_method == "full":
         return
-    raise NotImplementedError(
-        f"--training_method {args.training_method} is reserved for the adapter path; "
-        "the current implementation supports --training_method full."
+    try:
+        import peft  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            f"--training_method {args.training_method} requires peft. "
+            "Install with `uv add peft` or rerun `uv sync` after pulling."
+        ) from exc
+
+
+def split_csv(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or None
+
+
+def apply_adapter_training_method(model: Any, args: argparse.Namespace) -> Any:
+    if args.training_method == "full":
+        return model
+
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+    if args.training_method == "qlora":
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=args.gradient_checkpointing,
+        )
+
+    lora_config = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        bias=args.lora_bias,
+        task_type="CAUSAL_LM",
+        target_modules=split_csv(args.lora_target_modules),
+        modules_to_save=split_csv(args.lora_modules_to_save),
     )
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+    return model
 
 
 def maybe_enable_gradient_checkpointing(model: Any, enabled: bool) -> None:
@@ -272,7 +310,7 @@ def main() -> None:
         "--training_method",
         default="full",
         choices=["full", "lora", "qlora"],
-        help="Full FT is implemented now; LoRA/QLoRA are reserved extension paths.",
+        help="Training method: full fine-tuning, LoRA adapters, or 4-bit QLoRA adapters.",
     )
     parser.add_argument("--trust_remote_code", action="store_true")
     parser.add_argument("--use_fast_tokenizer", action="store_true")
@@ -288,6 +326,21 @@ def main() -> None:
     parser.add_argument("--gradient_accumulation_steps", type=int, default=16)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--optim", default="adamw_bnb_8bit")
+
+    parser.add_argument("--lora_r", type=int, default=16)
+    parser.add_argument("--lora_alpha", type=int, default=32)
+    parser.add_argument("--lora_dropout", type=float, default=0.05)
+    parser.add_argument("--lora_bias", default="none", choices=["none", "all", "lora_only"])
+    parser.add_argument(
+        "--lora_target_modules",
+        default=DEFAULT_LORA_TARGET_MODULES,
+        help="Comma-separated target module names for LoRA.",
+    )
+    parser.add_argument(
+        "--lora_modules_to_save",
+        default=None,
+        help="Optional comma-separated modules to save/train outside LoRA adapters.",
+    )
 
     parser.add_argument("--max_seq_length", type=int, default=4096)
     parser.add_argument("--drop_overlength", action=argparse.BooleanOptionalAction, default=True)
@@ -360,8 +413,18 @@ def main() -> None:
         model_kwargs["torch_dtype"] = torch.bfloat16
     elif fp16:
         model_kwargs["torch_dtype"] = torch.float16
+    if args.training_method == "qlora":
+        compute_dtype = torch.bfloat16 if bf16 else torch.float16
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=compute_dtype,
+        )
+        model_kwargs["device_map"] = "auto"
     model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, **model_kwargs)
     maybe_enable_gradient_checkpointing(model, args.gradient_checkpointing)
+    model = apply_adapter_training_method(model, args)
 
     train_dataset = Dataset.from_list(train_tokenized)
     eval_dataset = Dataset.from_list(val_tokenized) if val_tokenized else None
