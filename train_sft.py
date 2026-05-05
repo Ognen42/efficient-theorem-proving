@@ -19,6 +19,7 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig,
     Trainer,
+    TrainerCallback,
     TrainingArguments,
     set_seed,
 )
@@ -34,9 +35,17 @@ class TokenizationStats:
     rows_kept: int
     rows_dropped_overlength: int
     rows_dropped_empty: int
+    total_tokens: int
+    label_tokens: int
+    prompt_tokens: int
     min_length: int
     max_length: int
+    p50_length: int
+    p90_length: int
+    p95_length: int
     mean_length: float
+    mean_label_length: float
+    mean_prompt_length: float
 
 
 class CausalLmDataCollator:
@@ -62,6 +71,33 @@ class CausalLmDataCollator:
         }
 
 
+class EvalDerivedMetricsCallback(TrainerCallback):
+    """Add derived metrics that Trainer does not log by default."""
+
+    def __init__(self) -> None:
+        self.last_train_loss: float | None = None
+        self.best_eval_loss: float | None = None
+
+    def on_log(self, args: TrainingArguments, state: Any, control: Any, logs: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        if not logs:
+            return
+        loss = logs.get("loss")
+        if isinstance(loss, (int, float)):
+            self.last_train_loss = float(loss)
+        eval_loss = logs.get("eval_loss")
+        if isinstance(eval_loss, (int, float)):
+            eval_loss_float = float(eval_loss)
+            self.best_eval_loss = (
+                eval_loss_float
+                if self.best_eval_loss is None
+                else min(self.best_eval_loss, eval_loss_float)
+            )
+            logs["eval_perplexity"] = safe_exp(eval_loss_float)
+            logs["eval_best_loss"] = self.best_eval_loss
+            if self.last_train_loss is not None:
+                logs["eval_train_loss_gap"] = eval_loss_float - self.last_train_loss
+
+
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
     with path.open(encoding="utf-8") as f:
@@ -79,6 +115,21 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 def write_json(path: Path, payload: Any) -> None:
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
+
+
+def percentile_int(values: list[int], percentile: float) -> int:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    idx = round((len(ordered) - 1) * percentile)
+    return int(ordered[idx])
+
+
+def safe_exp(value: float) -> float:
+    try:
+        return float(math.exp(value))
+    except OverflowError:
+        return float("inf")
 
 
 def load_dataset_artifact(dataset_dir: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -148,6 +199,8 @@ def tokenize_rows(
 ) -> tuple[list[dict[str, Any]], TokenizationStats]:
     tokenized = []
     lengths = []
+    label_lengths = []
+    prompt_lengths = []
     dropped_overlength = 0
     dropped_empty = 0
 
@@ -181,11 +234,14 @@ def tokenize_rows(
         labels = list(input_ids)
         prompt_len = min(len(prompt_ids), len(labels))
         labels[:prompt_len] = [-100] * prompt_len
+        label_len = sum(1 for label in labels if label != -100)
         if all(label == -100 for label in labels):
             dropped_empty += 1
             continue
 
         lengths.append(len(input_ids))
+        label_lengths.append(label_len)
+        prompt_lengths.append(len(input_ids) - label_len)
         tokenized.append(
             {
                 "input_ids": input_ids,
@@ -200,9 +256,17 @@ def tokenize_rows(
         rows_kept=len(tokenized),
         rows_dropped_overlength=dropped_overlength,
         rows_dropped_empty=dropped_empty,
+        total_tokens=sum(lengths),
+        label_tokens=sum(label_lengths),
+        prompt_tokens=sum(prompt_lengths),
         min_length=min(lengths) if lengths else 0,
         max_length=max(lengths) if lengths else 0,
+        p50_length=percentile_int(lengths, 0.50),
+        p90_length=percentile_int(lengths, 0.90),
+        p95_length=percentile_int(lengths, 0.95),
         mean_length=float(mean(lengths)) if lengths else 0.0,
+        mean_label_length=float(mean(label_lengths)) if label_lengths else 0.0,
+        mean_prompt_length=float(mean(prompt_lengths)) if prompt_lengths else 0.0,
     )
     return tokenized, stats
 
@@ -265,6 +329,21 @@ def apply_adapter_training_method(model: Any, args: argparse.Namespace) -> Any:
     return model
 
 
+def parameter_stats(model: Any) -> dict[str, int | float]:
+    trainable = 0
+    total = 0
+    for parameter in model.parameters():
+        count = parameter.numel()
+        total += count
+        if parameter.requires_grad:
+            trainable += count
+    return {
+        "trainable_params": trainable,
+        "total_params": total,
+        "trainable_percent": (100.0 * trainable / total) if total else 0.0,
+    }
+
+
 def maybe_enable_gradient_checkpointing(model: Any, enabled: bool) -> None:
     if not enabled:
         return
@@ -274,10 +353,58 @@ def maybe_enable_gradient_checkpointing(model: Any, enabled: bool) -> None:
         model.config.use_cache = False
 
 
-def save_json_metrics(output_dir: Path, train_result: Any, eval_metrics: dict[str, Any]) -> None:
+def save_json_metrics(
+    output_dir: Path,
+    train_result: Any,
+    eval_metrics: dict[str, Any],
+    trainer: Trainer,
+    dataset_manifest: dict[str, Any],
+    config: dict[str, Any],
+    params: dict[str, int | float],
+) -> None:
     train_metrics = dict(train_result.metrics)
     write_json(output_dir / "train_metrics.json", train_metrics)
     write_json(output_dir / "eval_metrics.json", eval_metrics)
+    log_history = list(trainer.state.log_history)
+    write_json(output_dir / "trainer_log_history.json", log_history)
+
+    eval_losses = [
+        float(row["eval_loss"])
+        for row in log_history
+        if isinstance(row, dict) and isinstance(row.get("eval_loss"), (int, float))
+    ]
+    train_losses = [
+        float(row["loss"])
+        for row in log_history
+        if isinstance(row, dict) and isinstance(row.get("loss"), (int, float))
+    ]
+    final_eval_loss = (
+        float(eval_metrics["eval_loss"])
+        if isinstance(eval_metrics.get("eval_loss"), (int, float))
+        else (eval_losses[-1] if eval_losses else None)
+    )
+    final_train_loss = train_losses[-1] if train_losses else train_metrics.get("train_loss")
+    best_eval_loss = min(eval_losses) if eval_losses else final_eval_loss
+    summary = {
+        "final_train_loss": final_train_loss,
+        "final_eval_loss": final_eval_loss,
+        "best_eval_loss": best_eval_loss,
+        "final_eval_perplexity": (
+            safe_exp(float(final_eval_loss)) if isinstance(final_eval_loss, (int, float)) else None
+        ),
+        "train_eval_loss_gap": (
+            float(final_eval_loss) - float(final_train_loss)
+            if isinstance(final_eval_loss, (int, float))
+            and isinstance(final_train_loss, (int, float))
+            else None
+        ),
+        "train_metrics": train_metrics,
+        "eval_metrics": eval_metrics,
+        "parameter_stats": params,
+        "dataset": dataset_manifest,
+        "config": config,
+    }
+    write_json(output_dir / "run_summary.json", summary)
 
 
 def make_training_arguments(kwargs: dict[str, Any]) -> TrainingArguments:
@@ -425,6 +552,7 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, **model_kwargs)
     maybe_enable_gradient_checkpointing(model, args.gradient_checkpointing)
     model = apply_adapter_training_method(model, args)
+    params = parameter_stats(model)
 
     train_dataset = Dataset.from_list(train_tokenized)
     eval_dataset = Dataset.from_list(val_tokenized) if val_tokenized else None
@@ -470,37 +598,49 @@ def main() -> None:
             "eval_dataset": eval_dataset,
             "tokenizer": tokenizer,
             "data_collator": CausalLmDataCollator(tokenizer.pad_token_id),
+            "callbacks": [EvalDerivedMetricsCallback()],
         }
     )
 
+    training_config = {
+        **vars(args),
+        "resolved_bf16": bf16,
+        "resolved_fp16": fp16,
+        "effective_batch_size": (
+            args.per_device_train_batch_size * args.gradient_accumulation_steps
+        ),
+        **params,
+    }
+    dataset_manifest = {
+        "dataset_dir": args.dataset_dir,
+        "train": asdict(train_stats),
+        "val": asdict(val_stats),
+    }
     write_json(
         output_dir / "training_config.json",
-        {
-            **vars(args),
-            "resolved_bf16": bf16,
-            "resolved_fp16": fp16,
-            "effective_batch_size": (
-                args.per_device_train_batch_size * args.gradient_accumulation_steps
-            ),
-        },
+        training_config,
     )
     write_json(
         output_dir / "dataset_manifest.json",
-        {
-            "dataset_dir": args.dataset_dir,
-            "train": asdict(train_stats),
-            "val": asdict(val_stats),
-        },
+        dataset_manifest,
     )
 
     train_result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     eval_metrics = trainer.evaluate() if eval_dataset is not None else {}
     if "eval_loss" in eval_metrics:
-        eval_metrics["eval_perplexity"] = math.exp(eval_metrics["eval_loss"])
+        eval_metrics["eval_perplexity"] = safe_exp(float(eval_metrics["eval_loss"]))
 
     trainer.save_model(str(output_dir / "final"))
     tokenizer.save_pretrained(str(output_dir / "final"))
-    save_json_metrics(output_dir, train_result, eval_metrics)
+    save_json_metrics(
+        output_dir,
+        train_result,
+        eval_metrics,
+        trainer,
+        dataset_manifest,
+        training_config,
+        params,
+    )
 
 
 if __name__ == "__main__":
