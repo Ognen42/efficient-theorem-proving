@@ -94,6 +94,12 @@ train_run () {
   LOG_DIR="${LOG_ROOT}/${RUN_NAME}"
   mkdir -p "$LOG_DIR"
 
+  if [ -f "${OUT_DIR}/final/config.json" ]; then
+    echo "[$(date -Is)] Skipping training for ${RUN_NAME}; final checkpoint already exists"
+    evaluate_checkpoints "$RUN_NAME" "$LR" "$EFF_BATCH" "$OUT_DIR" "$LOG_DIR"
+    return
+  fi
+
   echo "[$(date -Is)] Training ${RUN_NAME}"
 
   uv run python train_sft.py \
