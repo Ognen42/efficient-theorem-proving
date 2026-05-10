@@ -7,7 +7,8 @@ export WANDB_PROJECT="efficient-theorem-proving"
 export WANDB_ENTITY="ognen-pendarovski-uno"
 
 MODEL="AI-MO/Kimina-Prover-Distill-1.7B"
-DATASET_DIR="data/datasets/sft_v2_p75"
+PRUNE_TAG="p90"
+DATASET_DIR="data/datasets/sft_v2_${PRUNE_TAG}"
 EVAL_DATASET="data/datasets/solved_143_test_aligned"
 
 EPOCHS=2
@@ -88,7 +89,7 @@ train_run () {
 
   LR_TAG="${LR//./p}"
   LR_TAG="${LR_TAG//-/_}"
-  RUN_NAME="full_v2_p75_lr${LR_TAG}_eb${EFF_BATCH}_e${EPOCHS}_ctx${CTX}"
+  RUN_NAME="full_v2_${PRUNE_TAG}_lr${LR_TAG}_eb${EFF_BATCH}_e${EPOCHS}_ctx${CTX}"
   OUT_DIR="${RUN_ROOT}/${RUN_NAME}"
   LOG_DIR="${LOG_ROOT}/${RUN_NAME}"
   mkdir -p "$LOG_DIR"
