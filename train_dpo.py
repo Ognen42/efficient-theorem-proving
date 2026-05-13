@@ -523,10 +523,16 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=43)
 
     parser.add_argument("--ref_batch_size", type=int, default=1)
+    parser.add_argument(
+        "--ref_logps_dir",
+        default=None,
+        help="Optional shared directory for cached reference log-probs. Defaults to output_dir/reference_logps.",
+    )
     parser.add_argument("--overwrite_ref_logps", action="store_true")
     parser.add_argument("--logging_steps", type=int, default=5)
     parser.add_argument("--eval_steps", type=int, default=50)
     parser.add_argument("--save_steps", type=int, default=100)
+    parser.add_argument("--save_strategy", default="steps", choices=["steps", "epoch", "no"])
     parser.add_argument("--save_total_limit", type=int, default=2)
     parser.add_argument("--resume_from_checkpoint", default=None)
     parser.add_argument("--save_safetensors", action=argparse.BooleanOptionalAction, default=True)
@@ -579,7 +585,7 @@ def main() -> None:
         raise ValueError("No training rows remain after tokenization/filtering")
 
     bf16, fp16 = resolve_precision(args)
-    ref_dir = output_dir / "reference_logps"
+    ref_dir = Path(args.ref_logps_dir) if args.ref_logps_dir else output_dir / "reference_logps"
     train_ref = compute_reference_logps(
         train_tokenized,
         args.ref_model_name_or_path,
@@ -634,8 +640,8 @@ def main() -> None:
             "logging_steps": args.logging_steps,
             "eval_steps": args.eval_steps if eval_dataset is not None else None,
             "eval_strategy": "steps" if eval_dataset is not None else "no",
-            "save_steps": args.save_steps,
-            "save_strategy": "steps",
+            "save_steps": args.save_steps if args.save_strategy == "steps" else None,
+            "save_strategy": args.save_strategy,
             "save_total_limit": args.save_total_limit,
             "save_safetensors": args.save_safetensors,
             "gradient_checkpointing": args.gradient_checkpointing,
