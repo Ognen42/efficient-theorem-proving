@@ -432,6 +432,19 @@ class DpoTrainer(Trainer):
             }
         return loss
 
+    def prediction_step(
+        self,
+        model: Any,
+        inputs: dict[str, torch.Tensor],
+        prediction_loss_only: bool,
+        ignore_keys: list[str] | None = None,
+    ) -> tuple[torch.Tensor | None, None, None]:
+        del prediction_loss_only, ignore_keys
+        inputs = self._prepare_inputs(inputs)
+        with torch.no_grad():
+            loss = self.compute_loss(model, inputs)
+        return loss.detach(), None, None
+
 
 def make_training_arguments(kwargs: dict[str, Any]) -> TrainingArguments:
     signature = inspect.signature(TrainingArguments.__init__)
